@@ -201,15 +201,6 @@ export default function WalletDashboard() {
     }
   }
 
-  async function handleUpdateRating(assetId: number, rating: number) {
-    await fetch(`/api/assets/${assetId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ rating }),
-    });
-    await loadPortfolio({ silent: true });
-  }
-
   async function handleUpdateTaxExemption(
     assetId: number,
     patch: { iofExempt?: boolean; irExempt?: boolean }
@@ -429,7 +420,6 @@ export default function WalletDashboard() {
               setDrawerCategory(cat);
               setDrawerOpen(true);
             }}
-            onUpdateRating={handleUpdateRating}
             onUpdateTaxExemption={handleUpdateTaxExemption}
             onDeleteAsset={handleDeleteAsset}
             onOpenTargetsSettings={() => setSettingsOpen(true)}

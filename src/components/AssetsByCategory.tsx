@@ -7,7 +7,6 @@ import {
   ArrowUpRight,
   Bitcoin,
   Building2,
-  CheckCircle2,
   ChevronDown,
   ChevronUp,
   Coins,
@@ -21,7 +20,6 @@ import {
   SlidersHorizontal,
   Trash2,
   TrendingUp,
-  XCircle,
 } from "lucide-react";
 import type {
   AssetCategory,
@@ -38,7 +36,6 @@ interface AssetsByCategoryProps {
   onAddDividendForAsset: (assetId: number) => void;
   onInspectAsset: (position: AssetPosition) => void;
   onInspectCategoryTransactions: (category: AssetCategory) => void;
-  onUpdateRating: (assetId: number, rating: number) => Promise<void>;
   onUpdateTaxExemption: (
     assetId: number,
     patch: { iofExempt?: boolean; irExempt?: boolean }
@@ -55,7 +52,6 @@ type SortKey =
   | "variationPct"
   | "profitabilityPct"
   | "currentValue"
-  | "rating"
   | "portfolioPct"
   | "idealPct";
 
@@ -66,23 +62,21 @@ type ColumnKey =
   | "variationPct"
   | "profitabilityPct"
   | "currentValue"
-  | "rating"
   | "portfolioPct"
-  | "idealPct"
-  | "shouldBuy";
+  | "idealPct";
 
-const ALL_OPTIONAL_COLUMNS: Array<{ key: ColumnKey; label: string }> = [
-  { key: "quantity", label: "Quant." },
-  { key: "averagePrice", label: "Preço Médio" },
-  { key: "currentPrice", label: "Preço Atual" },
-  { key: "variationPct", label: "Variação" },
-  { key: "profitabilityPct", label: "Rentabilidade" },
-  { key: "currentValue", label: "Saldo" },
-  { key: "rating", label: "Nota" },
-  { key: "portfolioPct", label: "% Carteira" },
-  { key: "idealPct", label: "% Ideal" },
-  { key: "shouldBuy", label: "Comprar?" },
-];
+function getColumnOptions(isFixedIncome: boolean): Array<{ key: ColumnKey; label: string }> {
+  return [
+    { key: "quantity", label: isFixedIncome ? "Rentabilidade" : "Quant." },
+    { key: "averagePrice", label: isFixedIncome ? "Valor Aplicado" : "Preço Médio" },
+    { key: "currentPrice", label: isFixedIncome ? "Valor Bruto" : "Preço Atual" },
+    { key: "variationPct", label: "Variação" },
+    { key: "profitabilityPct", label: "Rentabilidade" },
+    { key: "currentValue", label: isFixedIncome ? "Valor Líquido" : "Saldo" },
+    { key: "portfolioPct", label: "% Carteira" },
+    { key: "idealPct", label: "% Ideal" },
+  ];
+}
 
 function CategoryIcon({ category }: { category: AssetCategory }) {
   const cls = "h-4 w-4";
@@ -167,7 +161,6 @@ export default function AssetsByCategory({
   onAddDividendForAsset,
   onInspectAsset,
   onInspectCategoryTransactions,
-  onUpdateRating,
   onUpdateTaxExemption,
   onDeleteAsset,
   onOpenTargetsSettings,
@@ -185,13 +178,10 @@ export default function AssetsByCategory({
     variationPct: true,
     profitabilityPct: true,
     currentValue: true,
-    rating: true,
     portfolioPct: true,
     idealPct: true,
-    shouldBuy: true,
   });
   const [columnMenuCategory, setColumnMenuCategory] = useState<string | null>(null);
-  const [editingRatingId, setEditingRatingId] = useState<number | null>(null);
   const [openMenuAssetId, setOpenMenuAssetId] = useState<number | null>(null);
 
   function toggleSort(key: SortKey) {
@@ -220,8 +210,15 @@ export default function AssetsByCategory({
           switch (sortState.key) {
             case "ticker":
               return a.asset.ticker.localeCompare(b.asset.ticker) * factor;
-            case "rating":
-              return (a.asset.rating - b.asset.rating) * factor;
+            case "currentPrice": {
+              const va = a.fixedIncomeBreakdown
+                ? a.fixedIncomeBreakdown.grossValue
+                : a.currentPrice;
+              const vb = b.fixedIncomeBreakdown
+                ? b.fixedIncomeBreakdown.grossValue
+                : b.currentPrice;
+              return (va - vb) * factor;
+            }
             default:
               return ((a[sortState.key] as number) - (b[sortState.key] as number)) * factor;
           }
@@ -440,7 +437,7 @@ export default function AssetsByCategory({
                               onClick={() => toggleSort("currentPrice")}
                               className="inline-flex items-center gap-1 hover:text-[var(--text-primary)] cursor-pointer"
                             >
-                              {isFixedIncome ? "Valor Líquido" : "Preço Atual"}
+                              {isFixedIncome ? "Valor Bruto" : "Preço Atual"}
                               <ArrowUpDown className="h-3 w-3 opacity-60" />
                             </button>
                           </th>
@@ -479,20 +476,8 @@ export default function AssetsByCategory({
                               onClick={() => toggleSort("currentValue")}
                               className="inline-flex items-center gap-1 hover:text-[var(--text-primary)] cursor-pointer"
                             >
-                              Saldo
+                              {isFixedIncome ? "Valor Líquido" : "Saldo"}
                               <ArrowUpDown className="h-3 w-3 opacity-60" />
-                            </button>
-                          </th>
-                        ) : null}
-
-                        {visibleCols.rating ? (
-                          <th className="px-3 py-3 text-center whitespace-nowrap">
-                            <button
-                              type="button"
-                              onClick={() => toggleSort("rating")}
-                              className="inline-flex items-center gap-1 hover:text-[var(--text-primary)] cursor-pointer"
-                            >
-                              Nota
                             </button>
                           </th>
                         ) : null}
@@ -518,12 +503,6 @@ export default function AssetsByCategory({
                             >
                               % Ideal
                             </button>
-                          </th>
-                        ) : null}
-
-                        {visibleCols.shouldBuy ? (
-                          <th className="px-3 py-3 text-center whitespace-nowrap">
-                            Comprar?
                           </th>
                         ) : null}
 
@@ -586,7 +565,7 @@ export default function AssetsByCategory({
                               </td>
                             ) : null}
 
-                            {/* Preço Atual / Valor Líquido (RF com Bruto abaixo + Tooltip) */}
+                            {/* Preço Atual (RV) / Valor Bruto + Juros (RF) */}
                             {visibleCols.currentPrice ? (
                               <td
                                 className="px-3 py-3.5 text-right font-semibold text-[var(--text-primary)] tabular-nums whitespace-nowrap"
@@ -601,81 +580,13 @@ export default function AssetsByCategory({
                                 }
                               >
                                 {isFixedIncome && pos.fixedIncomeBreakdown ? (
-                                  <div className="group relative inline-flex flex-col items-end cursor-help">
-                                    <span>{formatBRL(pos.fixedIncomeBreakdown.netValue, hideValues)}</span>
-                                    <span className="text-[10px] font-medium text-[var(--text-muted)]">
-                                      Bruto {formatBRL(pos.fixedIncomeBreakdown.grossValue, hideValues)}
-                                      {pos.fixedIncomeBreakdown.irExempt
-                                        ? " · Isento"
-                                        : ` · IR ${formatPct(pos.fixedIncomeBreakdown.effectiveIrRatePct)}`}
+                                  <div className="inline-flex flex-col items-end">
+                                    <span>
+                                      {formatBRL(pos.fixedIncomeBreakdown.grossValue, hideValues)}
                                     </span>
-
-                                    {/* Rich Fixed Income Tax Breakdown Tooltip */}
-                                    <div className="pointer-events-none absolute right-0 top-full mt-1.5 z-50 w-60 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-3 text-left text-[11px] font-normal text-[var(--text-secondary)] shadow-xl opacity-0 group-hover:opacity-100 transition-opacity">
-                                      <p className="font-bold text-[var(--text-primary)] pb-1.5 mb-1.5 border-b border-[var(--border-subtle)]">
-                                        Demonstrativo Bruto × Líquido
-                                      </p>
-                                      <div className="space-y-1 tabular-nums">
-                                        <div className="flex justify-between gap-2">
-                                          <span>Valor aplicado</span>
-                                          <span className="font-medium text-[var(--text-primary)]">
-                                            {formatBRL(pos.investedValue, hideValues)}
-                                          </span>
-                                        </div>
-                                        <div className="flex justify-between gap-2">
-                                          <span>Valor bruto</span>
-                                          <span className="font-semibold text-[var(--text-primary)]">
-                                            {formatBRL(pos.fixedIncomeBreakdown.grossValue, hideValues)}
-                                          </span>
-                                        </div>
-                                        <div className="flex justify-between gap-2">
-                                          <span>
-                                            IOF{" "}
-                                            {pos.fixedIncomeBreakdown.iofExempt
-                                              ? "(Isento)"
-                                              : pos.fixedIncomeBreakdown.effectiveIofRatePct > 0
-                                                ? `(${formatPct(pos.fixedIncomeBreakdown.effectiveIofRatePct)})`
-                                                : "(0%)"}
-                                          </span>
-                                          <span
-                                            className={
-                                              pos.fixedIncomeBreakdown.iofAmount > 0
-                                                ? "text-[var(--loss)]"
-                                                : "text-[var(--text-muted)]"
-                                            }
-                                          >
-                                            {pos.fixedIncomeBreakdown.iofAmount > 0
-                                              ? `- ${formatBRL(pos.fixedIncomeBreakdown.iofAmount, hideValues)}`
-                                              : "R$ 0,00"}
-                                          </span>
-                                        </div>
-                                        <div className="flex justify-between gap-2">
-                                          <span>
-                                            IR{" "}
-                                            {pos.fixedIncomeBreakdown.irExempt
-                                              ? "(Isento)"
-                                              : `(${formatPct(pos.fixedIncomeBreakdown.effectiveIrRatePct)})`}
-                                          </span>
-                                          <span
-                                            className={
-                                              pos.fixedIncomeBreakdown.irAmount > 0
-                                                ? "text-[var(--loss)]"
-                                                : "text-[var(--text-muted)]"
-                                            }
-                                          >
-                                            {pos.fixedIncomeBreakdown.irAmount > 0
-                                              ? `- ${formatBRL(pos.fixedIncomeBreakdown.irAmount, hideValues)}`
-                                              : "R$ 0,00"}
-                                          </span>
-                                        </div>
-                                        <div className="flex justify-between gap-2 pt-1.5 mt-1 border-t border-[var(--border-subtle)] font-bold text-[var(--text-primary)]">
-                                          <span>Valor líquido</span>
-                                          <span className="text-[var(--gain)]">
-                                            {formatBRL(pos.fixedIncomeBreakdown.netValue, hideValues)}
-                                          </span>
-                                        </div>
-                                      </div>
-                                    </div>
+                                    <span className="text-[10px] font-medium text-[var(--gain)]">
+                                      +{formatBRL(pos.fixedIncomeBreakdown.grossGain, hideValues)} juros
+                                    </span>
                                   </div>
                                 ) : (
                                   <>
@@ -737,49 +648,100 @@ export default function AssetsByCategory({
                               </td>
                             ) : null}
 
-                            {/* Saldo */}
+                            {/* Saldo (RV) / Valor Líquido com demonstrativo de impostos (RF) */}
                             {visibleCols.currentValue ? (
                               <td className="px-3 py-3.5 text-right font-bold text-[var(--text-primary)] tabular-nums whitespace-nowrap">
-                                <div>{formatBRL(pos.currentValue, hideValues)}</div>
                                 {isFixedIncome && pos.fixedIncomeBreakdown ? (
-                                  <div className="text-[10px] font-medium text-[var(--text-muted)]">
-                                    Bruto {formatBRL(pos.fixedIncomeBreakdown.grossValue, hideValues)}
-                                  </div>
-                                ) : null}
-                              </td>
-                            ) : null}
+                                  <div className="group relative inline-flex flex-col items-end cursor-help">
+                                    <span>
+                                      {formatBRL(pos.fixedIncomeBreakdown.netValue, hideValues)}
+                                    </span>
+                                    <span className="text-[10px] font-medium text-[var(--text-muted)]">
+                                      {pos.fixedIncomeBreakdown.irExempt &&
+                                      pos.fixedIncomeBreakdown.iofExempt
+                                        ? "Isento de IR/IOF"
+                                        : pos.fixedIncomeBreakdown.iofAmount > 0
+                                          ? `IOF ${formatPct(pos.fixedIncomeBreakdown.effectiveIofRatePct)} · IR ${formatPct(pos.fixedIncomeBreakdown.effectiveIrRatePct)}`
+                                          : pos.fixedIncomeBreakdown.irExempt
+                                            ? "Isento de IR"
+                                            : `IR ${formatPct(pos.fixedIncomeBreakdown.effectiveIrRatePct)}`}
+                                    </span>
 
-                            {/* Nota (0-10 inline editable dark square badge) */}
-                            {visibleCols.rating ? (
-                              <td className="px-3 py-3.5 text-center whitespace-nowrap">
-                                {editingRatingId === pos.asset.id ? (
-                                  <select
-                                    autoFocus
-                                    value={pos.asset.rating}
-                                    onBlur={() => setEditingRatingId(null)}
-                                    onChange={async (e) => {
-                                      const val = Number(e.target.value);
-                                      setEditingRatingId(null);
-                                      await onUpdateRating(pos.asset.id, val);
-                                    }}
-                                    aria-label={`Alterar nota de ${pos.asset.ticker}`}
-                                    className="rounded-md border border-emerald-500 bg-[var(--bg-surface)] px-1.5 py-1 text-xs font-bold text-[var(--text-primary)] outline-none"
-                                  >
-                                    {Array.from({ length: 11 }, (_, i) => i).map((n) => (
-                                      <option key={n} value={n}>
-                                        {n}
-                                      </option>
-                                    ))}
-                                  </select>
+                                    {/* Rich Fixed Income Tax Breakdown Tooltip */}
+                                    <div className="pointer-events-none absolute right-0 top-full mt-1.5 z-50 w-64 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-3 text-left text-[11px] font-normal text-[var(--text-secondary)] shadow-xl opacity-0 group-hover:opacity-100 transition-opacity">
+                                      <p className="font-bold text-[var(--text-primary)] pb-1.5 mb-1.5 border-b border-[var(--border-subtle)]">
+                                        Demonstrativo Bruto × Líquido
+                                      </p>
+                                      <div className="space-y-1 tabular-nums">
+                                        <div className="flex justify-between gap-2">
+                                          <span>Valor aplicado</span>
+                                          <span className="font-medium text-[var(--text-primary)]">
+                                            {formatBRL(pos.investedValue, hideValues)}
+                                          </span>
+                                        </div>
+                                        <div className="flex justify-between gap-2">
+                                          <span>Juros brutos</span>
+                                          <span className="font-medium text-[var(--gain)]">
+                                            + {formatBRL(pos.fixedIncomeBreakdown.grossGain, hideValues)}
+                                          </span>
+                                        </div>
+                                        <div className="flex justify-between gap-2">
+                                          <span>Valor bruto</span>
+                                          <span className="font-semibold text-[var(--text-primary)]">
+                                            {formatBRL(pos.fixedIncomeBreakdown.grossValue, hideValues)}
+                                          </span>
+                                        </div>
+                                        <div className="flex justify-between gap-2">
+                                          <span>
+                                            IOF{" "}
+                                            {pos.fixedIncomeBreakdown.iofExempt
+                                              ? "(Isento)"
+                                              : pos.fixedIncomeBreakdown.effectiveIofRatePct > 0
+                                                ? `(${formatPct(pos.fixedIncomeBreakdown.effectiveIofRatePct)})`
+                                                : "(0%)"}
+                                          </span>
+                                          <span
+                                            className={
+                                              pos.fixedIncomeBreakdown.iofAmount > 0
+                                                ? "text-[var(--loss)]"
+                                                : "text-[var(--text-muted)]"
+                                            }
+                                          >
+                                            {pos.fixedIncomeBreakdown.iofAmount > 0
+                                              ? `- ${formatBRL(pos.fixedIncomeBreakdown.iofAmount, hideValues)}`
+                                              : "R$ 0,00"}
+                                          </span>
+                                        </div>
+                                        <div className="flex justify-between gap-2">
+                                          <span>
+                                            IR{" "}
+                                            {pos.fixedIncomeBreakdown.irExempt
+                                              ? "(Isento)"
+                                              : `(${formatPct(pos.fixedIncomeBreakdown.effectiveIrRatePct)})`}
+                                          </span>
+                                          <span
+                                            className={
+                                              pos.fixedIncomeBreakdown.irAmount > 0
+                                                ? "text-[var(--loss)]"
+                                                : "text-[var(--text-muted)]"
+                                            }
+                                          >
+                                            {pos.fixedIncomeBreakdown.irAmount > 0
+                                              ? `- ${formatBRL(pos.fixedIncomeBreakdown.irAmount, hideValues)}`
+                                              : "R$ 0,00"}
+                                          </span>
+                                        </div>
+                                        <div className="flex justify-between gap-2 pt-1.5 mt-1 border-t border-[var(--border-subtle)] font-bold text-[var(--text-primary)]">
+                                          <span>Valor líquido</span>
+                                          <span className="text-[var(--gain)]">
+                                            {formatBRL(pos.fixedIncomeBreakdown.netValue, hideValues)}
+                                          </span>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
                                 ) : (
-                                  <button
-                                    type="button"
-                                    onClick={() => setEditingRatingId(pos.asset.id)}
-                                    title="Clique para editar a nota (0 a 10) usada no rebalanceamento"
-                                    className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-[#232937] text-xs font-bold text-white hover:bg-emerald-600 transition-colors tabular-nums cursor-pointer dark:bg-slate-700"
-                                  >
-                                    {pos.asset.rating}
-                                  </button>
+                                  <div>{formatBRL(pos.currentValue, hideValues)}</div>
                                 )}
                               </td>
                             ) : null}
@@ -795,23 +757,6 @@ export default function AssetsByCategory({
                             {visibleCols.idealPct ? (
                               <td className="px-3 py-3.5 text-right font-medium text-[var(--text-muted)] tabular-nums whitespace-nowrap">
                                 {formatPct(pos.idealPct)}
-                              </td>
-                            ) : null}
-
-                            {/* Comprar? */}
-                            {visibleCols.shouldBuy ? (
-                              <td className="px-3 py-3.5 text-center whitespace-nowrap">
-                                {pos.shouldBuy ? (
-                                  <span className="inline-flex items-center gap-1 rounded-full bg-[var(--gain-soft)] px-2.5 py-1 text-xs font-semibold text-[var(--gain)]">
-                                    <CheckCircle2 className="h-3.5 w-3.5" />
-                                    Sim
-                                  </span>
-                                ) : (
-                                  <span className="inline-flex items-center gap-1 rounded-full bg-[var(--loss-soft)] px-2.5 py-1 text-xs font-semibold text-[var(--loss)]">
-                                    <XCircle className="h-3.5 w-3.5" />
-                                    Não
-                                  </span>
-                                )}
                               </td>
                             ) : null}
 
@@ -979,7 +924,7 @@ export default function AssetsByCategory({
                           Colunas visíveis
                         </p>
                         <div className="space-y-1">
-                          {ALL_OPTIONAL_COLUMNS.map((col) => (
+                          {getColumnOptions(isFixedIncome).map((col) => (
                             <label
                               key={col.key}
                               className="flex items-center gap-2 rounded-md px-1.5 py-1 text-xs text-[var(--text-primary)] hover:bg-[var(--bg-surface-subtle)] cursor-pointer"
