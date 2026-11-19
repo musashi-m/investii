@@ -35,6 +35,8 @@ export function formatBRL(value: number, hidden = false): string {
   return brlFormatter.format(value);
 }
 
+export const formatCurrencyBRL = formatBRL;
+
 export function formatCurrency(
   value: number,
   currency: "BRL" | "USD" = "BRL",

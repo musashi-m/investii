@@ -22,6 +22,13 @@ import AssetsByCategory from "@/components/AssetsByCategory";
 import AddTransactionModal from "@/components/AddTransactionModal";
 import AssetDetailsDrawer from "@/components/AssetDetailsDrawer";
 import SettingsModal from "@/components/SettingsModal";
+import FixedIncomeCalculator from "@/components/FixedIncomeCalculator";
+import MagicNumberCalculator from "@/components/MagicNumberCalculator";
+import DailyNotificationModal from "@/components/DailyNotificationModal";
+import {
+  getDailyNotificationSettings,
+  initDailyYieldScheduler,
+} from "@/lib/notifications/dailyYield";
 
 export default function WalletDashboard() {
   const router = useRouter();
@@ -54,6 +61,9 @@ export default function WalletDashboard() {
   const [drawerAssetId, setDrawerAssetId] = useState<number | null>(null);
   const [drawerCategory, setDrawerCategory] = useState<AssetCategory | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<"DASHBOARD" | "FIXED_INCOME_CALC" | "MAGIC_NUMBER">("DASHBOARD");
+  const [dailyNotificationModalOpen, setDailyNotificationModalOpen] = useState(false);
+  const [dailyNotificationEnabled, setDailyNotificationEnabled] = useState(false);
 
   const isFetchingRef = useRef(false);
 
@@ -154,6 +164,29 @@ export default function WalletDashboard() {
     if (!data) return [];
     return data.categories.flatMap((c) => c.assets);
   }, [data]);
+
+  // Compute estimated daily earnings of current Fixed Income positions (~1/252 business days)
+  const estimatedDailyYield = useMemo(() => {
+    if (!data) return 0;
+    const rfCategory = data.categories.find((c) => c.category === "RENDA_FIXA");
+    if (!rfCategory || rfCategory.assets.length === 0) return 0;
+
+    return rfCategory.assets.reduce((acc, pos) => {
+      const annualRatePct = pos.asset.rate || data.macro.cdiAnnualPct || 13.65;
+      const dailyRate = Math.pow(1 + annualRatePct / 100, 1 / 252) - 1;
+      const grossVal = pos.fixedIncomeBreakdown?.grossValue ?? pos.currentValue;
+      return acc + grossVal * dailyRate;
+    }, 0);
+  }, [data]);
+
+  // Initialize daily push notification scheduler (runs at 08:00 AM)
+  useEffect(() => {
+    const currentSettings = getDailyNotificationSettings();
+    setDailyNotificationEnabled(currentSettings.enabled);
+    if (currentSettings.enabled) {
+      initDailyYieldScheduler(() => estimatedDailyYield);
+    }
+  }, [estimatedDailyYield]);
 
   function handleToggleDarkMode() {
     setDarkMode((prev) => {
@@ -313,6 +346,13 @@ export default function WalletDashboard() {
         isRefreshing={isRefreshing}
         hideValues={hideValues}
         darkMode={darkMode}
+        activeTab={activeTab}
+        dailyNotificationEnabled={dailyNotificationEnabled}
+        onChangeTab={(t) => setActiveTab(t)}
+        onOpenDailyNotificationModal={() => {
+          setDailyNotificationModalOpen(true);
+          setDailyNotificationEnabled(getDailyNotificationSettings().enabled);
+        }}
         onSelectWallet={(id) => setWalletId(id)}
         onCreateWallet={handleCreateWallet}
         onToggleHideValues={handleToggleHideValues}
@@ -343,86 +383,106 @@ export default function WalletDashboard() {
           </div>
         ) : null}
 
-        {/* 4 Consolidated KPI Cards */}
-        <KpiCards
-          totals={data.totals}
-          sparkline12m={data.sparkline12m}
-          sparklineTotal={data.sparklineTotal}
-          hideValues={hideValues}
-        />
+        {/* Tab 1: Dashboard Principal da Carteira */}
+        {activeTab === "DASHBOARD" && (
+          <>
+            {/* 4 Consolidated KPI Cards */}
+            <KpiCards
+              totals={data.totals}
+              sparkline12m={data.sparkline12m}
+              sparklineTotal={data.sparklineTotal}
+              hideValues={hideValues}
+            />
 
-        {/* Charts Row: Evolução do Patrimônio + Ativos na Carteira */}
-        <ChartsSection
-          evolution={data.evolution}
-          allocation={data.allocation}
-          periodMonths={periodMonths}
-          categoryFilter={categoryFilter}
-          hideValues={hideValues}
-          onChangePeriod={(m) => setPeriodMonths(m)}
-          onChangeCategory={(c) => setCategoryFilter(c)}
-        />
+            {/* Charts Row: Evolução do Patrimônio + Ativos na Carteira */}
+            <ChartsSection
+              evolution={data.evolution}
+              allocation={data.allocation}
+              periodMonths={periodMonths}
+              categoryFilter={categoryFilter}
+              hideValues={hideValues}
+              onChangePeriod={(m) => setPeriodMonths(m)}
+              onChangeCategory={(c) => setCategoryFilter(c)}
+            />
 
-        {/* Empty State CTA (Zero Mock Data) OR Real Categorized Asset Tables */}
-        {isEmptyWallet ? (
-          <section className="rounded-xl border border-dashed border-[var(--border-strong)] bg-[var(--bg-surface)] px-6 py-12 text-center shadow-[0_1px_2px_rgba(16,24,40,0.03)]">
-            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-[var(--bg-surface-subtle)] border border-[var(--border-subtle)] text-emerald-600 dark:text-emerald-400">
-              <TrendingUp className="h-6 w-6" />
-            </div>
-            <h2 className="mt-4 text-lg font-bold text-[var(--text-primary)]">
-              Sua carteira “{data.wallet.name}” está pronta para começar
-            </h2>
-            <p className="mx-auto mt-1.5 max-w-lg text-sm text-[var(--text-muted)]">
-              Nenhum dado fictício foi pré-carregado. Cadastre seu primeiro aporte de
-              Renda Variável ou Renda Fixa para acompanhar cotações em tempo real,
-              preço médio, rentabilidade e rebalanceamento.
-            </p>
-            <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
-              <button
-                type="button"
-                onClick={() => openAddModal({ tab: "VARIABLE", category: "ACOES" })}
-                className="inline-flex items-center gap-2 rounded-lg bg-[var(--cta-bg)] px-4 py-2.5 text-xs font-semibold text-[var(--cta-text)] hover:bg-[var(--cta-hover)] transition-colors cursor-pointer"
-              >
-                <Plus className="h-4 w-4" />
-                Lançar Ação, FII, ETF ou Cripto
-              </button>
-              <button
-                type="button"
-                onClick={() => openAddModal({ tab: "FIXED", category: "RENDA_FIXA" })}
-                className="inline-flex items-center gap-2 rounded-lg border border-[var(--border-strong)] bg-[var(--bg-surface)] px-4 py-2.5 text-xs font-semibold text-[var(--text-primary)] hover:bg-[var(--bg-surface-subtle)] transition-colors cursor-pointer"
-              >
-                <Landmark className="h-4 w-4" />
-                Lançar Renda Fixa (CDB / Tesouro / LCI)
-              </button>
-            </div>
-          </section>
-        ) : (
-          <AssetsByCategory
-            categories={data.categories}
-            totalAssetCount={data.totals.assetCount}
-            hideValues={hideValues}
-            onAddTransactionForCategory={(cat, ticker) =>
-              openAddModal({
-                tab: cat === "RENDA_FIXA" ? "FIXED" : "VARIABLE",
-                category: cat,
-                ticker,
-              })
+            {/* Empty State CTA (Zero Mock Data) OR Real Categorized Asset Tables */}
+            {isEmptyWallet ? (
+              <section className="rounded-xl border border-dashed border-[var(--border-strong)] bg-[var(--bg-surface)] px-6 py-12 text-center shadow-[0_1px_2px_rgba(16,24,40,0.03)]">
+                <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-[var(--bg-surface-subtle)] border border-[var(--border-subtle)] text-emerald-600 dark:text-emerald-400">
+                  <TrendingUp className="h-6 w-6" />
+                </div>
+                <h2 className="mt-4 text-lg font-bold text-[var(--text-primary)]">
+                  Sua carteira “{data.wallet.name}” está pronta para começar
+                </h2>
+                <p className="mx-auto mt-1.5 max-w-lg text-sm text-[var(--text-muted)]">
+                  Nenhum dado fictício foi pré-carregado. Cadastre seu primeiro aporte de
+                  Renda Variável ou Renda Fixa para acompanhar cotações em tempo real,
+                  preço médio, rentabilidade e rebalanceamento.
+                </p>
+                <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => openAddModal({ tab: "VARIABLE", category: "ACOES" })}
+                    className="inline-flex items-center gap-2 rounded-lg bg-[var(--cta-bg)] px-4 py-2.5 text-xs font-semibold text-[var(--cta-text)] hover:bg-[var(--cta-hover)] transition-colors cursor-pointer"
+                  >
+                    <Plus className="h-4 w-4" />
+                    Lançar Ação, FII, ETF ou Cripto
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => openAddModal({ tab: "FIXED", category: "RENDA_FIXA" })}
+                    className="inline-flex items-center gap-2 rounded-lg border border-[var(--border-strong)] bg-[var(--bg-surface)] px-4 py-2.5 text-xs font-semibold text-[var(--text-primary)] hover:bg-[var(--bg-surface-subtle)] transition-colors cursor-pointer"
+                  >
+                    <Landmark className="h-4 w-4" />
+                    Lançar Renda Fixa (CDB / Tesouro / LCI)
+                  </button>
+                </div>
+              </section>
+            ) : (
+              <AssetsByCategory
+                categories={data.categories}
+                totalAssetCount={data.totals.assetCount}
+                hideValues={hideValues}
+                onAddTransactionForCategory={(cat, ticker) =>
+                  openAddModal({
+                    tab: cat === "RENDA_FIXA" ? "FIXED" : "VARIABLE",
+                    category: cat,
+                    ticker,
+                  })
+                }
+                onAddDividendForAsset={(assetId) =>
+                  openAddModal({ tab: "DIVIDEND", dividendAssetId: assetId })
+                }
+                onInspectAsset={(pos) => {
+                  setDrawerAssetId(pos.asset.id);
+                  setDrawerCategory(null);
+                  setDrawerOpen(true);
+                }}
+                onInspectCategoryTransactions={(cat) => {
+                  setDrawerAssetId(null);
+                  setDrawerCategory(cat);
+                  setDrawerOpen(true);
+                }}
+                onUpdateTaxExemption={handleUpdateTaxExemption}
+                onDeleteAsset={handleDeleteAsset}
+                onOpenTargetsSettings={() => setSettingsOpen(true)}
+              />
+            )}
+          </>
+        )}
+
+        {/* Tab 2: Calculadora de Renda Fixa */}
+        {activeTab === "FIXED_INCOME_CALC" && (
+          <FixedIncomeCalculator macro={data.macro} />
+        )}
+
+        {/* Tab 3: Calculadora do Número Mágico */}
+        {activeTab === "MAGIC_NUMBER" && (
+          <MagicNumberCalculator
+            userPositions={allPositions}
+            onOpenAddTransaction={(t) =>
+              openAddModal({ tab: "VARIABLE", ticker: t })
             }
-            onAddDividendForAsset={(assetId) =>
-              openAddModal({ tab: "DIVIDEND", dividendAssetId: assetId })
-            }
-            onInspectAsset={(pos) => {
-              setDrawerAssetId(pos.asset.id);
-              setDrawerCategory(null);
-              setDrawerOpen(true);
-            }}
-            onInspectCategoryTransactions={(cat) => {
-              setDrawerAssetId(null);
-              setDrawerCategory(cat);
-              setDrawerOpen(true);
-            }}
-            onUpdateTaxExemption={handleUpdateTaxExemption}
-            onDeleteAsset={handleDeleteAsset}
-            onOpenTargetsSettings={() => setSettingsOpen(true)}
           />
         )}
       </main>
@@ -486,6 +546,15 @@ export default function WalletDashboard() {
           await loadPortfolio({ forceRefresh: true, silent: true });
         }}
         onDeleteWallet={handleDeleteWallet}
+      />
+
+      <DailyNotificationModal
+        open={dailyNotificationModalOpen}
+        onClose={() => {
+          setDailyNotificationModalOpen(false);
+          setDailyNotificationEnabled(getDailyNotificationSettings().enabled);
+        }}
+        estimatedDailyYield={estimatedDailyYield}
       />
     </div>
   );

@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
+  Bell,
+  Calculator,
   ChevronDown,
   Eye,
   EyeOff,
@@ -12,6 +14,7 @@ import {
   Plus,
   RefreshCw,
   Settings,
+  Snowflake,
   Sun,
   TrendingUp,
 } from "lucide-react";
@@ -26,6 +29,10 @@ interface TopNavProps {
   isRefreshing: boolean;
   hideValues: boolean;
   darkMode: boolean;
+  activeTab?: "DASHBOARD" | "FIXED_INCOME_CALC" | "MAGIC_NUMBER";
+  dailyNotificationEnabled?: boolean;
+  onChangeTab?: (tab: "DASHBOARD" | "FIXED_INCOME_CALC" | "MAGIC_NUMBER") => void;
+  onOpenDailyNotificationModal?: () => void;
   onSelectWallet: (id: number) => void;
   onCreateWallet: (name: string) => Promise<void>;
   onToggleHideValues: () => void;
@@ -45,6 +52,10 @@ export default function TopNav({
   isRefreshing,
   hideValues,
   darkMode,
+  activeTab = "DASHBOARD",
+  dailyNotificationEnabled = false,
+  onChangeTab,
+  onOpenDailyNotificationModal,
   onSelectWallet,
   onCreateWallet,
   onToggleHideValues,
@@ -208,6 +219,22 @@ export default function TopNav({
               </span>
             </div>
 
+            {/* Daily Notification Bell */}
+            {onOpenDailyNotificationModal && (
+              <button
+                type="button"
+                onClick={onOpenDailyNotificationModal}
+                title="Notificação diária de rendimento de Renda Fixa (08:00)"
+                className="relative flex h-8 w-8 items-center justify-center rounded-lg text-slate-300 hover:bg-white/10 hover:text-amber-400 transition-colors cursor-pointer"
+                aria-label="Notificações diárias"
+              >
+                <Bell className="h-4 w-4" />
+                {dailyNotificationEnabled && (
+                  <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-emerald-400 ring-2 ring-[var(--bg-topbar)]" />
+                )}
+              </button>
+            )}
+
             {/* Privacy Toggle */}
             <button
               type="button"
@@ -248,14 +275,53 @@ export default function TopNav({
       <div className="bg-[var(--bg-surface)] border-b border-[var(--border-subtle)] shadow-[0_1px_2px_rgba(16,24,40,0.03)]">
         <div className="mx-auto flex min-h-[54px] max-w-[1440px] flex-wrap items-center justify-between gap-3 px-4 py-2 sm:px-6 lg:px-8 sm:py-0">
           {/* Navigation Tabs */}
-          <nav className="flex items-center gap-1 sm:gap-2" aria-label="Navegação da carteira">
+          <nav className="flex items-center gap-1 sm:gap-2 overflow-x-auto py-1 sm:py-0" aria-label="Navegação da carteira">
             <button
               type="button"
-              className="relative flex items-center gap-2 px-3 py-3.5 text-sm font-semibold text-[var(--text-primary)] cursor-default"
+              onClick={() => onChangeTab?.("DASHBOARD")}
+              className={`relative flex items-center gap-2 px-3 py-3 text-sm font-semibold transition-colors cursor-pointer ${
+                activeTab === "DASHBOARD"
+                  ? "text-[var(--text-primary)]"
+                  : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+              }`}
             >
               <Home className="h-4 w-4" />
               <span>Resumo</span>
-              <span className="absolute bottom-0 left-2 right-2 h-[2.5px] rounded-full bg-[var(--text-primary)]" />
+              {activeTab === "DASHBOARD" && (
+                <span className="absolute bottom-0 left-2 right-2 h-[2.5px] rounded-full bg-[var(--text-primary)]" />
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => onChangeTab?.("FIXED_INCOME_CALC")}
+              className={`relative flex items-center gap-2 px-3 py-3 text-sm font-semibold transition-colors cursor-pointer ${
+                activeTab === "FIXED_INCOME_CALC"
+                  ? "text-[var(--text-primary)]"
+                  : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+              }`}
+            >
+              <Calculator className="h-4 w-4 text-emerald-500" />
+              <span>Calculadora Renda Fixa</span>
+              {activeTab === "FIXED_INCOME_CALC" && (
+                <span className="absolute bottom-0 left-2 right-2 h-[2.5px] rounded-full bg-emerald-500" />
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => onChangeTab?.("MAGIC_NUMBER")}
+              className={`relative flex items-center gap-2 px-3 py-3 text-sm font-semibold transition-colors cursor-pointer ${
+                activeTab === "MAGIC_NUMBER"
+                  ? "text-[var(--text-primary)]"
+                  : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+              }`}
+            >
+              <Snowflake className="h-4 w-4 text-amber-500" />
+              <span>Número Mágico</span>
+              {activeTab === "MAGIC_NUMBER" && (
+                <span className="absolute bottom-0 left-2 right-2 h-[2.5px] rounded-full bg-amber-500" />
+              )}
             </button>
 
             <button
@@ -264,7 +330,8 @@ export default function TopNav({
               className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-surface-subtle)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
             >
               <ListOrdered className="h-4 w-4" />
-              <span>Lançamentos & Proventos</span>
+              <span className="hidden sm:inline">Lançamentos & Proventos</span>
+              <span className="sm:hidden">Extrato</span>
             </button>
           </nav>
 

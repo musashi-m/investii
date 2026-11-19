@@ -9,6 +9,8 @@ import {
   getIofRatePct,
   getIrRatePct,
 } from "./calculator.ts";
+import { simulateFixedIncome } from "./fixedIncomeSimulator.ts";
+import { calculateMagicNumber } from "./magicNumber.ts";
 import type {
   AssetRecord,
   DividendRecord,
@@ -315,4 +317,85 @@ test("evaluateFixedIncomeAsOf discounts regressive IOF/IR and respects iofExempt
   assert.equal(lci.breakdown.irAmount, 0);
   assert.equal(lci.breakdown.netValue, lci.breakdown.grossValue);
 });
+
+test("simulateFixedIncome computes chronological lots with regressive IR accurately", () => {
+  // Simulação de R$ 10.000 inicial + R$ 1.000/mês por 24 meses a 100% do CDI (13.65% a.a.)
+  const sim = simulateFixedIncome({
+    initialAmount: 10000,
+    monthlyContribution: 1000,
+    periodValue: 24,
+    periodUnit: "MONTHS",
+    indexer: "CDI",
+    ratePct: 100,
+    customCdiAnnualPct: 13.65,
+    isIrExempt: false,
+    isIofExempt: false,
+  });
+
+  // Total aportado: 10.000 + 24 * 1.000 = 34.000
+  assert.equal(sim.totalInvested, 34000);
+  assert.equal(sim.totalMonths, 24);
+  assert.ok(sim.grossInterest > 0);
+  assert.ok(sim.totalIr > 0);
+  assert.ok(sim.netTotal > sim.totalInvested);
+  assert.ok(sim.netTotal < sim.grossTotal);
+
+  // O aporte inicial (24 meses = 730 dias) deve ter atingido a alíquota mínima de IR (15%)
+  const initialLot = sim.lots[0];
+  assert.equal(initialLot.investedAmount, 10000);
+  assert.equal(initialLot.irRatePct, 15);
+
+  // O último aporte (Mês 24 = 30 dias) deve estar na alíquota máxima de IR (22.5%)
+  const lastLot = sim.lots[sim.lots.length - 1];
+  assert.equal(lastLot.investedAmount, 1000);
+  assert.equal(lastLot.irRatePct, 22.5);
+
+  // Se isento de IR (ex: LCI):
+  const lciSim = simulateFixedIncome({
+    initialAmount: 10000,
+    monthlyContribution: 1000,
+    periodValue: 24,
+    periodUnit: "MONTHS",
+    indexer: "CDI",
+    ratePct: 100,
+    customCdiAnnualPct: 13.65,
+    isIrExempt: true,
+    isIofExempt: true,
+  });
+  assert.equal(lciSim.totalIr, 0);
+  assert.equal(lciSim.totalIof, 0);
+  assert.ok(Math.abs(lciSim.netTotal - lciSim.grossTotal) < 1e-4);
+});
+
+test("calculateMagicNumber calculates snowball quotas, cost, and income correctly", () => {
+  // MXRF11: Preço R$ 10,00, dividendo R$ 0,10/mês
+  const result = calculateMagicNumber({
+    ticker: "MXRF11",
+    sharePrice: 10,
+    monthlyDividend: 0.1,
+    currentShares: 40,
+    monthlyContribution: 100,
+  });
+
+  // Número Mágico = ceil(10 / 0.1) = 100 cotas
+  assert.equal(result.magicNumberShares, 100);
+  // Custo para atingir: 100 * 10 = R$ 1.000,00
+  assert.equal(result.magicNumberCost, 1000);
+  // Renda gerada: 100 * 0.10 = R$ 10,00/mês
+  assert.equal(result.monthlyIncomeAtMagicNumber, 10);
+  // Faltam: 100 - 40 = 60 cotas (R$ 600,00)
+  assert.equal(result.missingShares, 60);
+  assert.equal(result.missingCapital, 600);
+  // Progresso: 40%
+  assert.equal(result.progressPct, 40);
+  assert.equal(result.isMagicReached, false);
+  assert.ok(result.monthsToGoal !== null && result.monthsToGoal > 0);
+
+  // Tiers (1x = 100, 2x = 200, 5x = 500)
+  assert.equal(result.tiers[0].sharesPerMonth, 1);
+  assert.equal(result.tiers[0].totalSharesNeeded, 100);
+  assert.equal(result.tiers[1].sharesPerMonth, 2);
+  assert.equal(result.tiers[1].totalSharesNeeded, 200);
+});
+
 
